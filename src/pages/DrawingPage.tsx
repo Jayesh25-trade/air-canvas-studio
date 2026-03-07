@@ -8,6 +8,11 @@ export type DrawingTool = {
   color: string;
   size: number;
   mode: "draw" | "erase";
+  opacity: number;
+  whiteboard: boolean;
+  rainbow: boolean;
+  mirror: boolean;
+  glow: boolean;
 };
 
 const DrawingPage = () => {
@@ -15,6 +20,11 @@ const DrawingPage = () => {
     color: "#00ffcc",
     size: 4,
     mode: "draw",
+    opacity: 1,
+    whiteboard: false,
+    rainbow: false,
+    mirror: false,
+    glow: true,
   });
   const [cameraReady, setCameraReady] = useState(false);
   const [gesture, setGesture] = useState<string>("none");
@@ -31,8 +41,8 @@ const DrawingPage = () => {
   const handleSave = useCallback(() => canvasActions.save?.(), [canvasActions]);
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-background">
-      <TopBar cameraReady={cameraReady} gesture={gesture} />
+    <div className={`relative h-screen w-screen overflow-hidden ${tool.whiteboard ? 'bg-white' : 'bg-background'}`}>
+      <TopBar cameraReady={cameraReady} gesture={gesture} whiteboard={tool.whiteboard} />
 
       <DrawingCanvas
         tool={tool}
@@ -50,7 +60,7 @@ const DrawingPage = () => {
         onSave={handleSave}
       />
 
-      <GestureGuide gesture={gesture} />
+      <GestureGuide gesture={gesture} whiteboard={tool.whiteboard} />
     </div>
   );
 };
