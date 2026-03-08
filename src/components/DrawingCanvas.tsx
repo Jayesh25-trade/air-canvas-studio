@@ -489,7 +489,11 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady }:
     <>
       <video
         ref={videoRef}
-        className={`absolute inset-0 h-full w-full object-cover -scale-x-100 ${tool.whiteboard ? 'opacity-10' : 'opacity-20'}`}
+        className={
+          tool.whiteboard
+            ? "absolute bottom-4 right-4 z-30 h-28 w-40 rounded-xl object-cover -scale-x-100 shadow-lg border-2 border-border/30 sm:h-36 sm:w-48"
+            : "absolute inset-0 h-full w-full object-cover -scale-x-100 opacity-20"
+        }
         playsInline
         muted
       />
