@@ -451,7 +451,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady }:
       }
     });
 
-    let camera: Camera | null = null;
+    let camera: any = null;
 
     navigator.mediaDevices
       .getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } })
