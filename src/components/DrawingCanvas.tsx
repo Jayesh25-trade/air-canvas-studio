@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { DrawingTool } from "@/pages/DrawingPage";
-import { Hands, Results } from "@mediapipe/hands";
-import { Camera } from "@mediapipe/camera_utils";
+import * as handsModule from "@mediapipe/hands";
+import * as cameraModule from "@mediapipe/camera_utils";
 import { motion } from "framer-motion";
 import { Camera as CameraIcon } from "lucide-react";
 
