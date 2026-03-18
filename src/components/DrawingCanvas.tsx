@@ -2,6 +2,10 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { DrawingTool } from "@/pages/DrawingPage";
 import * as handsModule from "@mediapipe/hands";
 import * as cameraModule from "@mediapipe/camera_utils";
+
+const Hands = (handsModule as any).Hands || (handsModule as any).default?.Hands;
+const Camera = (cameraModule as any).Camera || (cameraModule as any).default?.Camera;
+type Results = any;
 import { motion } from "framer-motion";
 import { Camera as CameraIcon } from "lucide-react";
 
