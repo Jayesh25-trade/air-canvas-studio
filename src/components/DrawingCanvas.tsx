@@ -207,6 +207,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady }:
         redoStackRef.current = [];
         redrawAll();
       },
+      getCanvas: () => drawCanvasRef.current,
       save: () => {
         const canvas = drawCanvasRef.current;
         if (!canvas) return;
