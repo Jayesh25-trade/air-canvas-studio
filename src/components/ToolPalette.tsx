@@ -32,6 +32,8 @@ interface ToolPaletteProps {
   onRedo: () => void;
   onClear: () => void;
   onSave: () => void;
+  onAiPerfect?: () => void;
+  isAiProcessing?: boolean;
 }
 
 const ToolPalette = ({ tool, onToolChange, onUndo, onRedo, onClear, onSave }: ToolPaletteProps) => {

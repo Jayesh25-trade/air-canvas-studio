@@ -18,6 +18,7 @@ interface DrawingCanvasProps {
     redo?: () => void;
     clear?: () => void;
     save?: () => void;
+    getCanvas?: () => HTMLCanvasElement | null;
   }) => void;
 }
 
