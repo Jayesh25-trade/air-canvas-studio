@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Palette,
   Settings2,
+  Wand2,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 
@@ -36,7 +37,7 @@ interface ToolPaletteProps {
   isAiProcessing?: boolean;
 }
 
-const ToolPalette = ({ tool, onToolChange, onUndo, onRedo, onClear, onSave }: ToolPaletteProps) => {
+const ToolPalette = ({ tool, onToolChange, onUndo, onRedo, onClear, onSave, onAiPerfect, isAiProcessing }: ToolPaletteProps) => {
   const [expanded, setExpanded] = useState(true);
   const colors = tool.whiteboard ? WHITEBOARD_COLORS : COLORS;
   const glass = tool.whiteboard ? "bg-white/90 border border-black/10 shadow-xl" : "glass";
