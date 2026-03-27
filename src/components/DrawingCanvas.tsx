@@ -1,13 +1,29 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { DrawingTool } from "@/pages/DrawingPage";
-import * as handsModule from "@mediapipe/hands";
-import * as cameraModule from "@mediapipe/camera_utils";
-
-const Hands = (handsModule as any).Hands || (handsModule as any).default?.Hands;
-const Camera = (cameraModule as any).Camera || (cameraModule as any).default?.Camera;
-type Results = any;
 import { motion } from "framer-motion";
 import { Camera as CameraIcon } from "lucide-react";
+
+type Results = any;
+
+// Load MediaPipe from CDN to avoid Vite bundling issues
+function loadScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement("script");
+    s.src = src;
+    s.crossOrigin = "anonymous";
+    s.onload = () => resolve();
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+async function loadMediaPipe() {
+  await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js");
+  await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js");
+  const w = window as any;
+  return { Hands: w.Hands, Camera: w.Camera };
+}
 
 interface DrawingCanvasProps {
   tool: DrawingTool;
@@ -255,225 +271,227 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady }:
     const cursorCtx = cursorCanvas.getContext("2d");
     if (!drawCtx || !cursorCtx) return;
 
-    const hands = new Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
-    });
+    let camera: any = null;
+    let hands: any = null;
+    let cancelled = false;
 
-    hands.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.75,
-      minTrackingConfidence: 0.65,
-    });
+    (async () => {
+      const mp = await loadMediaPipe();
+      if (cancelled) return;
 
-    hands.onResults((results: Results) => {
-      setLoading(false);
-      cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+      hands = new mp.Hands({
+        locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+      });
 
-      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-        onGestureChange("none");
-        if (isDrawingRef.current) {
-          isDrawingRef.current = false;
-          if (currentStrokeRef.current.length > 1) {
-            const currentTool = toolRef.current;
-            const effectiveColor = currentTool.rainbow ? getRainbowColor() : currentTool.color;
-            strokesRef.current.push({
-              points: [...currentStrokeRef.current],
-              color: effectiveColor,
-              size: currentTool.size,
-              mode: currentTool.mode,
-              opacity: currentTool.opacity,
-              glow: currentTool.glow,
-            });
-            // Mirror stroke
-            if (currentTool.mirror) {
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.75,
+        minTrackingConfidence: 0.65,
+      });
+
+      hands.onResults((results: Results) => {
+        setLoading(false);
+        cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+
+        if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+          onGestureChange("none");
+          if (isDrawingRef.current) {
+            isDrawingRef.current = false;
+            if (currentStrokeRef.current.length > 1) {
+              const currentTool = toolRef.current;
+              const effectiveColor = currentTool.rainbow ? getRainbowColor() : currentTool.color;
               strokesRef.current.push({
-                points: currentStrokeRef.current.map(p => ({
-                  x: cursorCanvas.width - p.x,
-                  y: p.y,
-                })),
+                points: [...currentStrokeRef.current],
                 color: effectiveColor,
                 size: currentTool.size,
                 mode: currentTool.mode,
                 opacity: currentTool.opacity,
                 glow: currentTool.glow,
               });
+              if (currentTool.mirror) {
+                strokesRef.current.push({
+                  points: currentStrokeRef.current.map(p => ({
+                    x: cursorCanvas.width - p.x,
+                    y: p.y,
+                  })),
+                  color: effectiveColor,
+                  size: currentTool.size,
+                  mode: currentTool.mode,
+                  opacity: currentTool.opacity,
+                  glow: currentTool.glow,
+                });
+              }
+              redoStackRef.current = [];
             }
-            redoStackRef.current = [];
+            currentStrokeRef.current = [];
+            filterXRef.current.reset();
+            filterYRef.current.reset();
           }
-          currentStrokeRef.current = [];
-          filterXRef.current.reset();
-          filterYRef.current.reset();
+          return;
         }
-        return;
-      }
 
-      const landmarks = results.multiHandLandmarks[0];
-      const rawGesture = detectGesture(landmarks);
-      
-      // Stabilize gesture with buffer
-      const buf = gestureBufferRef.current;
-      buf.push(rawGesture);
-      if (buf.length > 5) buf.shift();
-      const counts: Record<string, number> = {};
-      buf.forEach(g => counts[g] = (counts[g] || 0) + 1);
-      const gesture = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-      onGestureChange(gesture);
+        const landmarks = results.multiHandLandmarks[0];
+        const rawGesture = detectGesture(landmarks);
 
-      const tip = landmarks[8];
-      const now = performance.now() / 1000;
-      const rawX = (1 - tip.x) * cursorCanvas.width;
-      const rawY = tip.y * cursorCanvas.height;
-      const x = filterXRef.current.filter(rawX, now);
-      const y = filterYRef.current.filter(rawY, now);
+        const buf = gestureBufferRef.current;
+        buf.push(rawGesture);
+        if (buf.length > 5) buf.shift();
+        const counts: Record<string, number> = {};
+        buf.forEach(g => counts[g] = (counts[g] || 0) + 1);
+        const gesture = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+        onGestureChange(gesture);
 
-      const currentTool = toolRef.current;
-      const isErasing = gesture === "erase" || currentTool.mode === "erase";
-      const cursorColor = isErasing ? "hsl(330, 100%, 60%)" : (currentTool.rainbow ? `hsl(${rainbowHue}, 100%, 60%)` : currentTool.color);
+        const tip = landmarks[8];
+        const now = performance.now() / 1000;
+        const rawX = (1 - tip.x) * cursorCanvas.width;
+        const rawY = tip.y * cursorCanvas.height;
+        const x = filterXRef.current.filter(rawX, now);
+        const y = filterYRef.current.filter(rawY, now);
 
-      // Draw cursor with rings
-      cursorCtx.beginPath();
-      cursorCtx.arc(x, y, currentTool.size / 2 + 4, 0, Math.PI * 2);
-      cursorCtx.strokeStyle = cursorColor;
-      cursorCtx.lineWidth = 2;
-      cursorCtx.globalAlpha = 0.6;
-      cursorCtx.stroke();
-      cursorCtx.globalAlpha = 1;
+        const currentTool = toolRef.current;
+        const isErasing = gesture === "erase" || currentTool.mode === "erase";
+        const cursorColor = isErasing ? "hsl(330, 100%, 60%)" : (currentTool.rainbow ? `hsl(${rainbowHue}, 100%, 60%)` : currentTool.color);
 
-      cursorCtx.beginPath();
-      cursorCtx.arc(x, y, 4, 0, Math.PI * 2);
-      cursorCtx.fillStyle = cursorColor;
-      cursorCtx.shadowColor = cursorColor;
-      cursorCtx.shadowBlur = 15;
-      cursorCtx.fill();
-      cursorCtx.shadowBlur = 0;
-
-      // Mirror cursor
-      if (currentTool.mirror) {
-        const mx = cursorCanvas.width - x;
         cursorCtx.beginPath();
-        cursorCtx.arc(mx, y, 4, 0, Math.PI * 2);
-        cursorCtx.fillStyle = cursorColor;
-        cursorCtx.globalAlpha = 0.5;
-        cursorCtx.fill();
+        cursorCtx.arc(x, y, currentTool.size / 2 + 4, 0, Math.PI * 2);
+        cursorCtx.strokeStyle = cursorColor;
+        cursorCtx.lineWidth = 2;
+        cursorCtx.globalAlpha = 0.6;
+        cursorCtx.stroke();
         cursorCtx.globalAlpha = 1;
-      }
 
-      const effectiveMode = gesture === "erase" ? "erase" : currentTool.mode;
+        cursorCtx.beginPath();
+        cursorCtx.arc(x, y, 4, 0, Math.PI * 2);
+        cursorCtx.fillStyle = cursorColor;
+        cursorCtx.shadowColor = cursorColor;
+        cursorCtx.shadowBlur = 15;
+        cursorCtx.fill();
+        cursorCtx.shadowBlur = 0;
 
-      if (gesture === "draw" || gesture === "erase") {
-        if (!isDrawingRef.current) {
-          isDrawingRef.current = true;
-          currentStrokeRef.current = [{ x, y }];
-        } else {
-          currentStrokeRef.current.push({ x, y });
-
-          const pts = currentStrokeRef.current;
-          if (pts.length >= 2) {
-            const effectiveColor = currentTool.rainbow ? getRainbowColor() : currentTool.color;
-            drawCtx.save();
-            drawCtx.globalAlpha = currentTool.opacity;
-            drawCtx.beginPath();
-            drawCtx.strokeStyle = effectiveMode === "erase" ? "rgba(0,0,0,1)" : effectiveColor;
-            drawCtx.lineWidth = effectiveMode === "erase" ? currentTool.size * 4 : currentTool.size;
-            drawCtx.lineCap = "round";
-            drawCtx.lineJoin = "round";
-            drawCtx.globalCompositeOperation = effectiveMode === "erase" ? "destination-out" : "source-over";
-
-            if (effectiveMode === "draw" && currentTool.glow) {
-              drawCtx.shadowColor = effectiveColor;
-              drawCtx.shadowBlur = Math.min(currentTool.size * 2, 20);
-            }
-
-            const p1 = pts[pts.length - 2];
-            const p2 = pts[pts.length - 1];
-            const mx2 = (p1.x + p2.x) / 2;
-            const my2 = (p1.y + p2.y) / 2;
-            drawCtx.moveTo(p1.x, p1.y);
-            drawCtx.quadraticCurveTo(p1.x, p1.y, mx2, my2);
-            drawCtx.stroke();
-
-            // Mirror drawing in real-time
-            if (currentTool.mirror) {
-              drawCtx.beginPath();
-              const mp1x = cursorCanvas.width - p1.x;
-              const mp2x = cursorCanvas.width - p2.x;
-              const mmx = (mp1x + mp2x) / 2;
-              drawCtx.moveTo(mp1x, p1.y);
-              drawCtx.quadraticCurveTo(mp1x, p1.y, mmx, my2);
-              drawCtx.stroke();
-            }
-
-            drawCtx.restore();
-          }
+        if (currentTool.mirror) {
+          const mx = cursorCanvas.width - x;
+          cursorCtx.beginPath();
+          cursorCtx.arc(mx, y, 4, 0, Math.PI * 2);
+          cursorCtx.fillStyle = cursorColor;
+          cursorCtx.globalAlpha = 0.5;
+          cursorCtx.fill();
+          cursorCtx.globalAlpha = 1;
         }
-      } else {
-        if (isDrawingRef.current) {
-          isDrawingRef.current = false;
-          if (currentStrokeRef.current.length > 1) {
-            const effectiveColor = currentTool.rainbow ? getRainbowColor() : currentTool.color;
-            strokesRef.current.push({
-              points: [...currentStrokeRef.current],
-              color: effectiveColor,
-              size: currentTool.size,
-              mode: effectiveMode,
-              opacity: currentTool.opacity,
-              glow: currentTool.glow,
-            });
-            if (currentTool.mirror) {
+
+        const effectiveMode = gesture === "erase" ? "erase" : currentTool.mode;
+
+        if (gesture === "draw" || gesture === "erase") {
+          if (!isDrawingRef.current) {
+            isDrawingRef.current = true;
+            currentStrokeRef.current = [{ x, y }];
+          } else {
+            currentStrokeRef.current.push({ x, y });
+
+            const pts = currentStrokeRef.current;
+            if (pts.length >= 2) {
+              const effectiveColor = currentTool.rainbow ? getRainbowColor() : currentTool.color;
+              drawCtx.save();
+              drawCtx.globalAlpha = currentTool.opacity;
+              drawCtx.beginPath();
+              drawCtx.strokeStyle = effectiveMode === "erase" ? "rgba(0,0,0,1)" : effectiveColor;
+              drawCtx.lineWidth = effectiveMode === "erase" ? currentTool.size * 4 : currentTool.size;
+              drawCtx.lineCap = "round";
+              drawCtx.lineJoin = "round";
+              drawCtx.globalCompositeOperation = effectiveMode === "erase" ? "destination-out" : "source-over";
+
+              if (effectiveMode === "draw" && currentTool.glow) {
+                drawCtx.shadowColor = effectiveColor;
+                drawCtx.shadowBlur = Math.min(currentTool.size * 2, 20);
+              }
+
+              const p1 = pts[pts.length - 2];
+              const p2 = pts[pts.length - 1];
+              const mx2 = (p1.x + p2.x) / 2;
+              const my2 = (p1.y + p2.y) / 2;
+              drawCtx.moveTo(p1.x, p1.y);
+              drawCtx.quadraticCurveTo(p1.x, p1.y, mx2, my2);
+              drawCtx.stroke();
+
+              if (currentTool.mirror) {
+                drawCtx.beginPath();
+                const mp1x = cursorCanvas.width - p1.x;
+                const mp2x = cursorCanvas.width - p2.x;
+                const mmx = (mp1x + mp2x) / 2;
+                drawCtx.moveTo(mp1x, p1.y);
+                drawCtx.quadraticCurveTo(mp1x, p1.y, mmx, my2);
+                drawCtx.stroke();
+              }
+
+              drawCtx.restore();
+            }
+          }
+        } else {
+          if (isDrawingRef.current) {
+            isDrawingRef.current = false;
+            if (currentStrokeRef.current.length > 1) {
+              const effectiveColor = currentTool.rainbow ? getRainbowColor() : currentTool.color;
               strokesRef.current.push({
-                points: currentStrokeRef.current.map(p => ({
-                  x: cursorCanvas.width - p.x,
-                  y: p.y,
-                })),
+                points: [...currentStrokeRef.current],
                 color: effectiveColor,
                 size: currentTool.size,
                 mode: effectiveMode,
                 opacity: currentTool.opacity,
                 glow: currentTool.glow,
               });
+              if (currentTool.mirror) {
+                strokesRef.current.push({
+                  points: currentStrokeRef.current.map(p => ({
+                    x: cursorCanvas.width - p.x,
+                    y: p.y,
+                  })),
+                  color: effectiveColor,
+                  size: currentTool.size,
+                  mode: effectiveMode,
+                  opacity: currentTool.opacity,
+                  glow: currentTool.glow,
+                });
+              }
+              redoStackRef.current = [];
             }
+            currentStrokeRef.current = [];
+            filterXRef.current.reset();
+            filterYRef.current.reset();
+          }
+
+          if (gesture === "clear") {
+            strokesRef.current = [];
             redoStackRef.current = [];
-          }
-          currentStrokeRef.current = [];
-          filterXRef.current.reset();
-          filterYRef.current.reset();
-        }
-
-        if (gesture === "clear") {
-          strokesRef.current = [];
-          redoStackRef.current = [];
-          if (currentTool.whiteboard) {
-            drawCtx.fillStyle = "#ffffff";
-            drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
-          } else {
-            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            if (currentTool.whiteboard) {
+              drawCtx.fillStyle = "#ffffff";
+              drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+            } else {
+              drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            }
           }
         }
-      }
-    });
+      });
 
-    let camera: any = null;
-
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } })
-      .then(() => {
-        camera = new Camera(video, {
+      try {
+        await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
+        if (cancelled) return;
+        camera = new mp.Camera(video, {
           onFrame: async () => { await hands.send({ image: video }); },
           width: 640,
           height: 480,
         });
         camera.start();
         onCameraReady(true);
-      })
-      .catch(() => {
+      } catch {
         setPermissionDenied(true);
         setLoading(false);
-      });
+      }
+    })();
 
     return () => {
+      cancelled = true;
       camera?.stop();
-      hands.close();
+      hands?.close();
       window.removeEventListener("resize", resize);
     };
   }, [onCameraReady, onGestureChange, redrawAll]);
