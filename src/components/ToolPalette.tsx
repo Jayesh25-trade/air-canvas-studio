@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Palette,
   Settings2,
+  Wand2,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 
@@ -32,9 +33,11 @@ interface ToolPaletteProps {
   onRedo: () => void;
   onClear: () => void;
   onSave: () => void;
+  onAiPerfect?: () => void;
+  isAiProcessing?: boolean;
 }
 
-const ToolPalette = ({ tool, onToolChange, onUndo, onRedo, onClear, onSave }: ToolPaletteProps) => {
+const ToolPalette = ({ tool, onToolChange, onUndo, onRedo, onClear, onSave, onAiPerfect, isAiProcessing }: ToolPaletteProps) => {
   const [expanded, setExpanded] = useState(true);
   const colors = tool.whiteboard ? WHITEBOARD_COLORS : COLORS;
   const glass = tool.whiteboard ? "bg-white/90 border border-black/10 shadow-xl" : "glass";
@@ -205,6 +208,27 @@ const ToolPalette = ({ tool, onToolChange, onUndo, onRedo, onClear, onSave }: To
             </motion.div>
           )}
         </AnimatePresence>
+
+        <Divider whiteboard={tool.whiteboard} />
+
+        {/* AI Perfect - always visible */}
+        {onAiPerfect && (
+          <button
+            onClick={onAiPerfect}
+            disabled={isAiProcessing}
+            title="AI Perfect ✨"
+            className={`flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-xs font-medium transition-all ${
+              isAiProcessing
+                ? "opacity-50 cursor-wait"
+                : tool.whiteboard
+                  ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 shadow-md"
+                  : "bg-gradient-to-r from-primary to-secondary text-primary-foreground hover:opacity-90 neon-glow-cyan"
+            }`}
+          >
+            <Wand2 className={`h-3.5 w-3.5 ${isAiProcessing ? "animate-spin" : ""}`} />
+            {isAiProcessing ? "..." : "AI ✨"}
+          </button>
+        )}
 
         <Divider whiteboard={tool.whiteboard} />
 

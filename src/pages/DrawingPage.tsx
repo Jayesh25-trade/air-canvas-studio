@@ -1,8 +1,10 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import DrawingCanvas from "@/components/DrawingCanvas";
 import ToolPalette from "@/components/ToolPalette";
 import TopBar from "@/components/TopBar";
 import GestureGuide from "@/components/GestureGuide";
+import AiPerfectOverlay from "@/components/AiPerfectOverlay";
+import { useAiPerfect } from "@/hooks/useAiPerfect";
 
 export type DrawingTool = {
   color: string;
@@ -33,12 +35,32 @@ const DrawingPage = () => {
     redo?: () => void;
     clear?: () => void;
     save?: () => void;
+    getCanvas?: () => HTMLCanvasElement | null;
   }>({});
+
+  const {
+    isProcessing,
+    perfectedImage,
+    showOverlay,
+    perfectDrawing,
+    applyPerfectedImage,
+    dismissOverlay,
+  } = useAiPerfect();
 
   const handleUndo = useCallback(() => canvasActions.undo?.(), [canvasActions]);
   const handleRedo = useCallback(() => canvasActions.redo?.(), [canvasActions]);
   const handleClear = useCallback(() => canvasActions.clear?.(), [canvasActions]);
   const handleSave = useCallback(() => canvasActions.save?.(), [canvasActions]);
+
+  const handleAiPerfect = useCallback(() => {
+    const canvas = canvasActions.getCanvas?.();
+    if (canvas) perfectDrawing(canvas);
+  }, [canvasActions, perfectDrawing]);
+
+  const handleApplyPerfected = useCallback(() => {
+    const canvas = canvasActions.getCanvas?.();
+    if (canvas) applyPerfectedImage(canvas);
+  }, [canvasActions, applyPerfectedImage]);
 
   return (
     <div className={`relative h-screen w-screen overflow-hidden ${tool.whiteboard ? 'bg-white' : 'bg-background'}`}>
@@ -51,6 +73,14 @@ const DrawingPage = () => {
         onActionsReady={setCanvasActions}
       />
 
+      <AiPerfectOverlay
+        show={showOverlay}
+        perfectedImage={perfectedImage}
+        isProcessing={isProcessing}
+        onApply={handleApplyPerfected}
+        onDismiss={dismissOverlay}
+      />
+
       <ToolPalette
         tool={tool}
         onToolChange={setTool}
@@ -58,6 +88,8 @@ const DrawingPage = () => {
         onRedo={handleRedo}
         onClear={handleClear}
         onSave={handleSave}
+        onAiPerfect={handleAiPerfect}
+        isAiProcessing={isProcessing}
       />
 
       <GestureGuide gesture={gesture} whiteboard={tool.whiteboard} />
