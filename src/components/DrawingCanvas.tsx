@@ -1,13 +1,29 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { DrawingTool } from "@/pages/DrawingPage";
-import * as handsModule from "@mediapipe/hands";
-import * as cameraModule from "@mediapipe/camera_utils";
-
-const Hands = (handsModule as any).Hands || (handsModule as any).default?.Hands;
-const Camera = (cameraModule as any).Camera || (cameraModule as any).default?.Camera;
-type Results = any;
 import { motion } from "framer-motion";
 import { Camera as CameraIcon } from "lucide-react";
+
+type Results = any;
+
+// Load MediaPipe from CDN to avoid Vite bundling issues
+function loadScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement("script");
+    s.src = src;
+    s.crossOrigin = "anonymous";
+    s.onload = () => resolve();
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+async function loadMediaPipe() {
+  await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js");
+  await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js");
+  const w = window as any;
+  return { Hands: w.Hands, Camera: w.Camera };
+}
 
 interface DrawingCanvasProps {
   tool: DrawingTool;
