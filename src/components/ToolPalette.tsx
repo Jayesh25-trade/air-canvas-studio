@@ -211,6 +211,27 @@ const ToolPalette = ({ tool, onToolChange, onUndo, onRedo, onClear, onSave, onAi
 
         <Divider whiteboard={tool.whiteboard} />
 
+        {/* AI Perfect - always visible */}
+        {onAiPerfect && (
+          <button
+            onClick={onAiPerfect}
+            disabled={isAiProcessing}
+            title="AI Perfect ✨"
+            className={`flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-xs font-medium transition-all ${
+              isAiProcessing
+                ? "opacity-50 cursor-wait"
+                : tool.whiteboard
+                  ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600 shadow-md"
+                  : "bg-gradient-to-r from-primary to-secondary text-primary-foreground hover:opacity-90 neon-glow-cyan"
+            }`}
+          >
+            <Wand2 className={`h-3.5 w-3.5 ${isAiProcessing ? "animate-spin" : ""}`} />
+            {isAiProcessing ? "..." : "AI ✨"}
+          </button>
+        )}
+
+        <Divider whiteboard={tool.whiteboard} />
+
         {/* Actions - always visible */}
         <div className="grid grid-cols-2 gap-0.5">
           <ToolBtn onClick={onUndo} title="Undo" whiteboard={tool.whiteboard}><Undo2 className="h-3.5 w-3.5" /></ToolBtn>
