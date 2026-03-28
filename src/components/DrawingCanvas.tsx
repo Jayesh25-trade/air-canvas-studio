@@ -35,7 +35,11 @@ interface DrawingCanvasProps {
     clear?: () => void;
     save?: () => void;
     getCanvas?: () => HTMLCanvasElement | null;
+    getStrokeCount?: () => number;
+    clearStrokes?: () => void;
   }) => void;
+  onStrokeEnd?: () => void;
+  onStrokeStart?: () => void;
 }
 
 interface Point { x: number; y: number; }
@@ -137,7 +141,7 @@ function getRainbowColor(): string {
   return `hsl(${rainbowHue}, 100%, 60%)`;
 }
 
-const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady }: DrawingCanvasProps) => {
+const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, onStrokeEnd, onStrokeStart }: DrawingCanvasProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
   const cursorCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -225,6 +229,11 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady }:
         redrawAll();
       },
       getCanvas: () => drawCanvasRef.current,
+      getStrokeCount: () => strokesRef.current.length,
+      clearStrokes: () => {
+        strokesRef.current = [];
+        redoStackRef.current = [];
+      },
       save: () => {
         const canvas = drawCanvasRef.current;
         if (!canvas) return;
@@ -323,6 +332,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady }:
                 });
               }
               redoStackRef.current = [];
+              onStrokeEnd?.();
             }
             currentStrokeRef.current = [];
             filterXRef.current.reset();
@@ -385,6 +395,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady }:
           if (!isDrawingRef.current) {
             isDrawingRef.current = true;
             currentStrokeRef.current = [{ x, y }];
+            onStrokeStart?.();
           } else {
             currentStrokeRef.current.push({ x, y });
 
@@ -453,6 +464,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady }:
                 });
               }
               redoStackRef.current = [];
+              onStrokeEnd?.();
             }
             currentStrokeRef.current = [];
             filterXRef.current.reset();
