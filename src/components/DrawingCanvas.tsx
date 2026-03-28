@@ -399,7 +399,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
           if (!isDrawingRef.current) {
             isDrawingRef.current = true;
             currentStrokeRef.current = [{ x, y }];
-            onStrokeStart?.();
+            onStrokeStartRef.current?.();
           } else {
             currentStrokeRef.current.push({ x, y });
 
