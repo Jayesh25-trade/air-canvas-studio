@@ -156,8 +156,12 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
   const filterXRef = useRef(new OneEuroFilter(1.5, 0.01));
   const filterYRef = useRef(new OneEuroFilter(1.5, 0.01));
   const gestureBufferRef = useRef<string[]>([]);
+  const onStrokeEndRef = useRef(onStrokeEnd);
+  const onStrokeStartRef = useRef(onStrokeStart);
 
   toolRef.current = tool;
+  onStrokeEndRef.current = onStrokeEnd;
+  onStrokeStartRef.current = onStrokeStart;
 
   const drawStroke = useCallback((ctx: CanvasRenderingContext2D, stroke: StrokeLine) => {
     if (stroke.points.length < 2) return;
