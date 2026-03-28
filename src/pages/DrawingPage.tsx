@@ -36,15 +36,15 @@ const DrawingPage = () => {
     clear?: () => void;
     save?: () => void;
     getCanvas?: () => HTMLCanvasElement | null;
+    getStrokeCount?: () => number;
+    clearStrokes?: () => void;
   }>({});
 
   const {
     isProcessing,
-    perfectedImage,
-    showOverlay,
     perfectDrawing,
-    applyPerfectedImage,
-    dismissOverlay,
+    startPauseTimer,
+    cancelPauseTimer,
   } = useAiPerfect();
 
   const handleUndo = useCallback(() => canvasActions.undo?.(), [canvasActions]);
@@ -54,13 +54,29 @@ const DrawingPage = () => {
 
   const handleAiPerfect = useCallback(() => {
     const canvas = canvasActions.getCanvas?.();
-    if (canvas) perfectDrawing(canvas);
+    if (canvas) {
+      perfectDrawing(canvas, () => {
+        // Clear internal stroke history after AI applies so drawing continues fresh
+        canvasActions.clearStrokes?.();
+      });
+    }
   }, [canvasActions, perfectDrawing]);
 
-  const handleApplyPerfected = useCallback(() => {
+  // Called by DrawingCanvas whenever a stroke ends
+  const handleStrokeEnd = useCallback(() => {
     const canvas = canvasActions.getCanvas?.();
-    if (canvas) applyPerfectedImage(canvas);
-  }, [canvasActions, applyPerfectedImage]);
+    const count = canvasActions.getStrokeCount?.() ?? 0;
+    if (canvas && count > 0) {
+      startPauseTimer(canvas, count, () => {
+        canvasActions.clearStrokes?.();
+      });
+    }
+  }, [canvasActions, startPauseTimer]);
+
+  // Called when user starts drawing
+  const handleStrokeStart = useCallback(() => {
+    cancelPauseTimer();
+  }, [cancelPauseTimer]);
 
   return (
     <div className={`relative h-screen w-screen overflow-hidden ${tool.whiteboard ? 'bg-white' : 'bg-background'}`}>
@@ -71,15 +87,11 @@ const DrawingPage = () => {
         onCameraReady={setCameraReady}
         onGestureChange={setGesture}
         onActionsReady={setCanvasActions}
+        onStrokeEnd={handleStrokeEnd}
+        onStrokeStart={handleStrokeStart}
       />
 
-      <AiPerfectOverlay
-        show={showOverlay}
-        perfectedImage={perfectedImage}
-        isProcessing={isProcessing}
-        onApply={handleApplyPerfected}
-        onDismiss={dismissOverlay}
-      />
+      <AiPerfectOverlay isProcessing={isProcessing} />
 
       <ToolPalette
         tool={tool}
