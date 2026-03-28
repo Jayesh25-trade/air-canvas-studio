@@ -336,7 +336,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
                 });
               }
               redoStackRef.current = [];
-              onStrokeEnd?.();
+              onStrokeEndRef.current?.();
             }
             currentStrokeRef.current = [];
             filterXRef.current.reset();
@@ -468,7 +468,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
                 });
               }
               redoStackRef.current = [];
-              onStrokeEnd?.();
+              onStrokeEndRef.current?.();
             }
             currentStrokeRef.current = [];
             filterXRef.current.reset();
