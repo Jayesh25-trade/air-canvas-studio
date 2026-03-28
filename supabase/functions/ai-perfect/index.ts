@@ -34,14 +34,14 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash-image",
+          model: "google/gemini-3.1-flash-image-preview",
           messages: [
             {
               role: "user",
               content: [
                 {
                   type: "text",
-                  text: "You are an expert artist. Look at this rough hand-drawn sketch and create a clean, perfected, beautiful version of whatever the user was trying to draw. Keep the same subject matter and colors but make it smooth, well-proportioned, and artistically polished. The output should be the same dimensions. Use vibrant neon colors on a dark background unless the drawing uses dark colors on white. Make it look stunning and professional while keeping the original intent.",
+                  text: "You are an expert digital artist. Look at this hand-drawn sketch and create a clean, perfected version. CRITICAL RULES: 1) Keep EXACT same canvas dimensions - do not crop or resize. 2) Keep every shape in the EXACT same position and EXACT same size as the original. 3) Clean up wobbly lines into smooth, precise strokes. 4) Maintain the same colors. 5) Keep the same dark background. 6) Make lines crisp and professional while preserving the original composition exactly. Do NOT add anything new or change proportions.",
                 },
                 {
                   type: "image_url",
