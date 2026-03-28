@@ -156,8 +156,12 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
   const filterXRef = useRef(new OneEuroFilter(1.5, 0.01));
   const filterYRef = useRef(new OneEuroFilter(1.5, 0.01));
   const gestureBufferRef = useRef<string[]>([]);
+  const onStrokeEndRef = useRef(onStrokeEnd);
+  const onStrokeStartRef = useRef(onStrokeStart);
 
   toolRef.current = tool;
+  onStrokeEndRef.current = onStrokeEnd;
+  onStrokeStartRef.current = onStrokeStart;
 
   const drawStroke = useCallback((ctx: CanvasRenderingContext2D, stroke: StrokeLine) => {
     if (stroke.points.length < 2) return;
@@ -332,7 +336,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
                 });
               }
               redoStackRef.current = [];
-              onStrokeEnd?.();
+              onStrokeEndRef.current?.();
             }
             currentStrokeRef.current = [];
             filterXRef.current.reset();
@@ -395,7 +399,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
           if (!isDrawingRef.current) {
             isDrawingRef.current = true;
             currentStrokeRef.current = [{ x, y }];
-            onStrokeStart?.();
+            onStrokeStartRef.current?.();
           } else {
             currentStrokeRef.current.push({ x, y });
 
@@ -464,7 +468,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
                 });
               }
               redoStackRef.current = [];
-              onStrokeEnd?.();
+              onStrokeEndRef.current?.();
             }
             currentStrokeRef.current = [];
             filterXRef.current.reset();
