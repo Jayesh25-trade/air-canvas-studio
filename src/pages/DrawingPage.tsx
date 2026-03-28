@@ -39,6 +39,8 @@ const DrawingPage = () => {
     getStrokeCount?: () => number;
     clearStrokes?: () => void;
   }>({});
+  const canvasActionsRef = useRef(canvasActions);
+  canvasActionsRef.current = canvasActions;
 
   const {
     isProcessing,
@@ -53,25 +55,26 @@ const DrawingPage = () => {
   const handleSave = useCallback(() => canvasActions.save?.(), [canvasActions]);
 
   const handleAiPerfect = useCallback(() => {
-    const canvas = canvasActions.getCanvas?.();
+    const actions = canvasActionsRef.current;
+    const canvas = actions.getCanvas?.();
     if (canvas) {
       perfectDrawing(canvas, () => {
-        // Clear internal stroke history after AI applies so drawing continues fresh
-        canvasActions.clearStrokes?.();
+        canvasActionsRef.current.clearStrokes?.();
       });
     }
-  }, [canvasActions, perfectDrawing]);
+  }, [perfectDrawing]);
 
   // Called by DrawingCanvas whenever a stroke ends
   const handleStrokeEnd = useCallback(() => {
-    const canvas = canvasActions.getCanvas?.();
-    const count = canvasActions.getStrokeCount?.() ?? 0;
+    const actions = canvasActionsRef.current;
+    const canvas = actions.getCanvas?.();
+    const count = actions.getStrokeCount?.() ?? 0;
     if (canvas && count > 0) {
       startPauseTimer(canvas, count, () => {
-        canvasActions.clearStrokes?.();
+        canvasActionsRef.current.clearStrokes?.();
       });
     }
-  }, [canvasActions, startPauseTimer]);
+  }, [startPauseTimer]);
 
   // Called when user starts drawing
   const handleStrokeStart = useCallback(() => {
