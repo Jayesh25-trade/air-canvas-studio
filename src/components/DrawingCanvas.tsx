@@ -237,6 +237,19 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
       clearStrokes: () => {
         strokesRef.current = [];
         redoStackRef.current = [];
+        // Clear canvas pixels so camera feed shows through again
+        const c = drawCanvasRef.current;
+        if (c) {
+          const cx = c.getContext("2d");
+          if (cx) {
+            if (toolRef.current.whiteboard) {
+              cx.fillStyle = "#ffffff";
+              cx.fillRect(0, 0, c.width, c.height);
+            } else {
+              cx.clearRect(0, 0, c.width, c.height);
+            }
+          }
+        }
       },
       save: () => {
         const canvas = drawCanvasRef.current;

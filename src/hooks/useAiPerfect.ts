@@ -43,6 +43,8 @@ export function useAiPerfect() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             setIsProcessing(false);
+            // Reset stroke counter so next drawing session triggers auto-AI
+            lastStrokeCountRef.current = 0;
             onDone?.();
             // Cooldown to prevent re-triggering immediately
             cooldownRef.current = true;
