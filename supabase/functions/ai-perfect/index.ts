@@ -34,14 +34,14 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3.1-flash-image-preview",
+          model: "google/gemini-3-pro-image-preview",
           messages: [
             {
               role: "user",
               content: [
                 {
                   type: "text",
-                  text: "You are an expert digital artist. Look at this hand-drawn sketch and create a clean, perfected version. CRITICAL RULES: 1) Keep EXACT same canvas dimensions - do not crop or resize. 2) Keep every shape in the EXACT same position and EXACT same size as the original. 3) Clean up wobbly lines into smooth, precise strokes. 4) Maintain the same colors. 5) Keep the same dark background. 6) Make lines crisp and professional while preserving the original composition exactly. Do NOT add anything new or change proportions.",
+                  text: "Refine this sketch into a cleaner and smoother final drawing while preserving structure exactly. HARD RULES: keep the exact same canvas size, keep every shape in exactly the same position and same proportions, preserve original colors, keep the same dark background, do not add/remove elements, and do not stylize beyond line cleanup. Output one polished image only.",
                 },
                 {
                   type: "image_url",
