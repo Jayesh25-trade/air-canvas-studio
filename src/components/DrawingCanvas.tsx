@@ -156,6 +156,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
   const filterXRef = useRef(new OneEuroFilter(1.5, 0.01));
   const filterYRef = useRef(new OneEuroFilter(1.5, 0.01));
   const gestureBufferRef = useRef<string[]>([]);
+  const clearGestureStartRef = useRef<number | null>(null);
   const onStrokeEndRef = useRef(onStrokeEnd);
   const onStrokeStartRef = useRef(onStrokeStart);
 
@@ -482,14 +483,22 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
           }
 
           if (gesture === "clear") {
-            strokesRef.current = [];
-            redoStackRef.current = [];
-            if (currentTool.whiteboard) {
-              drawCtx.fillStyle = "#ffffff";
-              drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
-            } else {
-              drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            const nowMs = performance.now();
+            if (clearGestureStartRef.current === null) {
+              clearGestureStartRef.current = nowMs;
+            } else if (nowMs - clearGestureStartRef.current > 1200) {
+              strokesRef.current = [];
+              redoStackRef.current = [];
+              if (currentTool.whiteboard) {
+                drawCtx.fillStyle = "#ffffff";
+                drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+              } else {
+                drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+              }
+              clearGestureStartRef.current = null;
             }
+          } else {
+            clearGestureStartRef.current = null;
           }
         }
       });
