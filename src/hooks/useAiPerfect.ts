@@ -32,7 +32,35 @@ export function useAiPerfect() {
         body: { imageBase64 },
       });
 
-      if (error) throw error;
+      // Handle FunctionsHttpError - extract the actual error message from response
+      if (error) {
+        let errorMsg = error.message || "Something went wrong";
+        try {
+          // The error context may contain the response body
+          if (error.context && typeof error.context === 'object') {
+            const response = (error as any).context;
+            if (response instanceof Response) {
+              const body = await response.json();
+              errorMsg = body?.error || errorMsg;
+            }
+          }
+        } catch {}
+        
+        if (errorMsg.includes("Rate limit") || errorMsg.includes("429")) {
+          toast({
+            title: "Rate Limited",
+            description: "Too many requests. Will retry automatically in 15 seconds.",
+          });
+          setIsProcessing(false);
+          // Auto-retry after 15s
+          setTimeout(() => {
+            cooldownRef.current = false;
+            perfectDrawing(canvas, onDone);
+          }, 15000);
+          return;
+        }
+        throw new Error(errorMsg);
+      }
 
       if (data?.perfectedImage) {
         // Auto-apply the perfected image onto the canvas
