@@ -156,6 +156,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
   const filterXRef = useRef(new OneEuroFilter(1.5, 0.01));
   const filterYRef = useRef(new OneEuroFilter(1.5, 0.01));
   const gestureBufferRef = useRef<string[]>([]);
+  const clearGestureStartRef = useRef<number | null>(null);
   const onStrokeEndRef = useRef(onStrokeEnd);
   const onStrokeStartRef = useRef(onStrokeStart);
 
@@ -235,21 +236,14 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
       getCanvas: () => drawCanvasRef.current,
       getStrokeCount: () => strokesRef.current.length,
       clearStrokes: () => {
+        // Reset stroke history only.
+        // Keep current canvas pixels so AI result is not erased after applying.
         strokesRef.current = [];
         redoStackRef.current = [];
-        // Clear canvas pixels so camera feed shows through again
-        const c = drawCanvasRef.current;
-        if (c) {
-          const cx = c.getContext("2d");
-          if (cx) {
-            if (toolRef.current.whiteboard) {
-              cx.fillStyle = "#ffffff";
-              cx.fillRect(0, 0, c.width, c.height);
-            } else {
-              cx.clearRect(0, 0, c.width, c.height);
-            }
-          }
-        }
+        currentStrokeRef.current = [];
+        isDrawingRef.current = false;
+        filterXRef.current.reset();
+        filterYRef.current.reset();
       },
       save: () => {
         const canvas = drawCanvasRef.current;
@@ -489,14 +483,22 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
           }
 
           if (gesture === "clear") {
-            strokesRef.current = [];
-            redoStackRef.current = [];
-            if (currentTool.whiteboard) {
-              drawCtx.fillStyle = "#ffffff";
-              drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
-            } else {
-              drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            const nowMs = performance.now();
+            if (clearGestureStartRef.current === null) {
+              clearGestureStartRef.current = nowMs;
+            } else if (nowMs - clearGestureStartRef.current > 1200) {
+              strokesRef.current = [];
+              redoStackRef.current = [];
+              if (currentTool.whiteboard) {
+                drawCtx.fillStyle = "#ffffff";
+                drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+              } else {
+                drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+              }
+              clearGestureStartRef.current = null;
             }
+          } else {
+            clearGestureStartRef.current = null;
           }
         }
       });

@@ -25,39 +25,48 @@ serve(async (req) => {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    const response = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
-      {
+    const requestBodyForModel = (model: string) => ({
+      model,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Refine this sketch into a cleaner and smoother final drawing while preserving structure exactly. HARD RULES: keep the exact same canvas size, keep every shape in exactly the same position and same proportions, preserve original colors, keep the same dark background, do not add/remove elements, and do not stylize beyond line cleanup. Output one polished image only.",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: imageBase64.startsWith("data:")
+                  ? imageBase64
+                  : `data:image/png;base64,${imageBase64}`,
+              },
+            },
+          ],
+        },
+      ],
+      modalities: ["image", "text"],
+    });
+
+    const callGateway = (model: string) =>
+      fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${LOVABLE_API_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model: "google/gemini-3.1-flash-image-preview",
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: "You are an expert digital artist. Look at this hand-drawn sketch and create a clean, perfected version. CRITICAL RULES: 1) Keep EXACT same canvas dimensions - do not crop or resize. 2) Keep every shape in the EXACT same position and EXACT same size as the original. 3) Clean up wobbly lines into smooth, precise strokes. 4) Maintain the same colors. 5) Keep the same dark background. 6) Make lines crisp and professional while preserving the original composition exactly. Do NOT add anything new or change proportions.",
-                },
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: imageBase64.startsWith("data:")
-                      ? imageBase64
-                      : `data:image/png;base64,${imageBase64}`,
-                  },
-                },
-              ],
-            },
-          ],
-          modalities: ["image", "text"],
-        }),
-      }
-    );
+        body: JSON.stringify(requestBodyForModel(model)),
+      });
+
+    let response = await callGateway("google/gemini-3-pro-image-preview");
+
+    // Some images are rejected by provider on the pro model; retry with flash-image model.
+    if (!response.ok && response.status === 400) {
+      const firstErrorText = await response.text();
+      console.warn("ai-perfect primary model rejected image, retrying with fallback model", firstErrorText);
+      response = await callGateway("google/gemini-3.1-flash-image-preview");
+    }
 
     if (!response.ok) {
       if (response.status === 429) {
