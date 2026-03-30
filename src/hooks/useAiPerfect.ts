@@ -114,7 +114,7 @@ export function useAiPerfect() {
       lastStrokeCountRef.current = strokeCount;
 
       if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
-      if (strokeCount < 3) return;
+      if (strokeCount < 2) return;
 
       pauseTimerRef.current = setTimeout(() => {
         perfectDrawing(canvas, onDone);
