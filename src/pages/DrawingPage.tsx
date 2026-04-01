@@ -43,10 +43,12 @@ const DrawingPage = () => {
   canvasActionsRef.current = canvasActions;
 
   const {
+    aiStage,
     isProcessing,
     perfectDrawing,
     startPauseTimer,
     cancelPauseTimer,
+    markDrawingActivity,
   } = useAiPerfect();
 
   const handleUndo = useCallback(() => canvasActions.undo?.(), [canvasActions]);
@@ -58,11 +60,11 @@ const DrawingPage = () => {
     const actions = canvasActionsRef.current;
     const canvas = actions.getCanvas?.();
     if (canvas) {
-      perfectDrawing(canvas, () => {
+      perfectDrawing({ canvas, whiteboard: tool.whiteboard, onDone: () => {
         canvasActionsRef.current.clearStrokes?.();
-      });
+      } });
     }
-  }, [perfectDrawing]);
+  }, [perfectDrawing, tool.whiteboard]);
 
   // Called by DrawingCanvas whenever a stroke ends
   const handleStrokeEnd = useCallback(() => {
@@ -70,16 +72,17 @@ const DrawingPage = () => {
     const canvas = actions.getCanvas?.();
     const count = actions.getStrokeCount?.() ?? 0;
     if (canvas && count > 0) {
-      startPauseTimer(canvas, count, () => {
+      startPauseTimer(canvas, count, tool.whiteboard, () => {
         canvasActionsRef.current.clearStrokes?.();
       });
     }
-  }, [startPauseTimer]);
+  }, [startPauseTimer, tool.whiteboard]);
 
   // Called when user starts drawing
   const handleStrokeStart = useCallback(() => {
     cancelPauseTimer();
-  }, [cancelPauseTimer]);
+    markDrawingActivity();
+  }, [cancelPauseTimer, markDrawingActivity]);
 
   return (
     <div className={`relative h-screen w-screen overflow-hidden ${tool.whiteboard ? 'bg-white' : 'bg-background'}`}>
@@ -94,7 +97,7 @@ const DrawingPage = () => {
         onStrokeStart={handleStrokeStart}
       />
 
-      <AiPerfectOverlay isProcessing={isProcessing} />
+      <AiPerfectOverlay stage={aiStage} />
 
       <ToolPalette
         tool={tool}

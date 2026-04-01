@@ -1,102 +1,182 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import {
+  createTransparentAiLayer,
+  loadImageElement,
+  prepareAiPayload,
+} from "@/lib/aiPerfectCanvas";
+
+type PerfectDrawingOptions = {
+  canvas: HTMLCanvasElement;
+  whiteboard: boolean;
+  onDone?: () => void;
+  source?: "auto" | "manual";
+};
+
+type AiPerfectStage = "idle" | "processing" | "applying";
 
 export function useAiPerfect() {
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [aiStage, setAiStage] = useState<AiPerfectStage>("idle");
   const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastStrokeCountRef = useRef(0);
   const cooldownRef = useRef(false);
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const processingRef = useRef(false);
+  const drawingRevisionRef = useRef(0);
+
+  const clearPauseTimer = useCallback(() => {
+    if (pauseTimerRef.current) {
+      clearTimeout(pauseTimerRef.current);
+      pauseTimerRef.current = null;
+    }
+  }, []);
 
   const setCooldown = useCallback((ms: number) => {
     cooldownRef.current = true;
-    setTimeout(() => {
+
+    if (cooldownTimerRef.current) {
+      clearTimeout(cooldownTimerRef.current);
+    }
+
+    cooldownTimerRef.current = setTimeout(() => {
       cooldownRef.current = false;
     }, ms);
   }, []);
 
-  const perfectDrawing = useCallback(async (canvas: HTMLCanvasElement, onDone?: () => void) => {
-    if (isProcessing || cooldownRef.current) return;
+  const resolveFunctionError = useCallback(async (error: any) => {
+    let message = error?.message || "AI request failed";
+    const status = error?.context?.status;
 
-    setIsProcessing(true);
+    if (error?.context && typeof error.context.clone === "function") {
+      try {
+        const payload = await error.context.clone().json();
+        if (payload?.error) {
+          message = payload.error;
+        }
+      } catch {
+        // Ignore JSON parsing issues and use the default message.
+      }
+    }
+
+    return { message, status };
+  }, []);
+
+  const perfectDrawing = useCallback(async ({
+    canvas,
+    whiteboard,
+    onDone,
+    source = "manual",
+  }: PerfectDrawingOptions) => {
+    if (processingRef.current || cooldownRef.current) return;
+
+    const preparedPayload = prepareAiPayload(canvas, whiteboard);
+    if (!preparedPayload) return;
+
+    clearPauseTimer();
+    processingRef.current = true;
+    setAiStage("processing");
+
+    const revisionAtRequestStart = drawingRevisionRef.current;
+    let shouldRetryForFreshDrawing = false;
+    let didApplyResult = false;
 
     try {
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = canvas.width;
-      tempCanvas.height = canvas.height;
-      const tempCtx = tempCanvas.getContext("2d");
-      if (!tempCtx) throw new Error("No context");
-
-      tempCtx.fillStyle = "#0d0f17";
-      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-      tempCtx.drawImage(canvas, 0, 0);
-
-      const imageBase64 = tempCanvas.toDataURL("image/png");
       const { data, error } = await supabase.functions.invoke("ai-perfect", {
-        body: { imageBase64 },
+        body: {
+          imageBase64: preparedPayload.imageBase64,
+          backgroundMode: preparedPayload.background.mode,
+        },
       });
 
       if (error) {
-        const message = (error.message || "AI request failed").toLowerCase();
+        const { message, status } = await resolveFunctionError(error);
+        const normalizedMessage = message.toLowerCase();
 
-        if (message.includes("429") || message.includes("rate limit")) {
+        if (status === 429 || normalizedMessage.includes("429") || normalizedMessage.includes("rate limit")) {
           toast({
             title: "Rate limited",
-            description: "Too many AI requests. Please draw a bit more and retry in a few seconds.",
+            description: "Too many AI requests right now. Auto-perfect will be available again in a few seconds.",
             variant: "destructive",
           });
-          setIsProcessing(false);
-          setCooldown(8000);
+          setCooldown(6000);
           return;
         }
 
-        if (message.includes("402") || message.includes("credits")) {
+        if (status === 402 || normalizedMessage.includes("402") || normalizedMessage.includes("credits")) {
           toast({
             title: "AI credits needed",
             description: "AI credits are exhausted. Please top up and try again.",
             variant: "destructive",
           });
-          setIsProcessing(false);
           setCooldown(12000);
           return;
         }
 
-        throw error;
-      }
-
-      if (data?.perfectedImage) {
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          setIsProcessing(false);
-          return;
-        }
-
-        const img = new Image();
-        img.onload = () => {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          lastStrokeCountRef.current = 0;
-          onDone?.();
-          setIsProcessing(false);
-          setCooldown(5000);
-        };
-        img.onerror = () => {
-          setIsProcessing(false);
-          toast({
-            title: "AI Perfect Failed",
-            description: "Could not load AI image result.",
-            variant: "destructive",
-          });
-        };
-        img.src = data.perfectedImage;
-        return;
+        throw new Error(message);
       }
 
       if (data?.error) {
         throw new Error(data.error);
       }
 
-      setIsProcessing(false);
+      if (!data?.perfectedImage) {
+        throw new Error("AI did not return an image.");
+      }
+
+      if (drawingRevisionRef.current !== revisionAtRequestStart) {
+        shouldRetryForFreshDrawing = source === "auto";
+        return;
+      }
+
+      const resultImage = await loadImageElement(data.perfectedImage);
+
+      if (drawingRevisionRef.current !== revisionAtRequestStart) {
+        shouldRetryForFreshDrawing = source === "auto";
+        return;
+      }
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("No context");
+      }
+
+      setAiStage("applying");
+
+      const transparentLayer = createTransparentAiLayer(resultImage, preparedPayload.background);
+
+      if (whiteboard) {
+        context.fillStyle = preparedPayload.background.css;
+        context.fillRect(
+          preparedPayload.region.x,
+          preparedPayload.region.y,
+          preparedPayload.region.width,
+          preparedPayload.region.height
+        );
+      } else {
+        context.clearRect(
+          preparedPayload.region.x,
+          preparedPayload.region.y,
+          preparedPayload.region.width,
+          preparedPayload.region.height
+        );
+      }
+
+      context.drawImage(
+        transparentLayer,
+        preparedPayload.region.x,
+        preparedPayload.region.y,
+        preparedPayload.region.width,
+        preparedPayload.region.height
+      );
+
+      lastStrokeCountRef.current = 0;
+      onDone?.();
+      didApplyResult = true;
+      setCooldown(2500);
+
+      await new Promise((resolve) => setTimeout(resolve, 420));
+      setAiStage("idle");
     } catch (err: any) {
       console.error("AI perfect error:", err);
       toast({
@@ -104,36 +184,61 @@ export function useAiPerfect() {
         description: err?.message || "Something went wrong",
         variant: "destructive",
       });
-      setIsProcessing(false);
+      setAiStage("idle");
+    } finally {
+      processingRef.current = false;
+
+      if (!didApplyResult) {
+        setAiStage("idle");
+      }
+
+      if (shouldRetryForFreshDrawing && !cooldownRef.current) {
+        window.setTimeout(() => {
+          void perfectDrawing({ canvas, whiteboard, onDone, source: "auto" });
+        }, 250);
+      }
     }
-  }, [isProcessing, setCooldown]);
+  }, [clearPauseTimer, resolveFunctionError, setCooldown]);
 
   const startPauseTimer = useCallback(
-    (canvas: HTMLCanvasElement, strokeCount: number, onDone?: () => void) => {
+    (canvas: HTMLCanvasElement, strokeCount: number, whiteboard: boolean, onDone?: () => void) => {
       if (strokeCount <= lastStrokeCountRef.current) return;
       lastStrokeCountRef.current = strokeCount;
 
-      if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
-      if (strokeCount < 2) return;
+      clearPauseTimer();
+      if (strokeCount < 1) return;
 
       pauseTimerRef.current = setTimeout(() => {
-        perfectDrawing(canvas, onDone);
+        void perfectDrawing({ canvas, whiteboard, onDone, source: "auto" });
       }, 3000);
     },
-    [perfectDrawing]
+    [clearPauseTimer, perfectDrawing]
   );
 
   const cancelPauseTimer = useCallback(() => {
-    if (pauseTimerRef.current) {
-      clearTimeout(pauseTimerRef.current);
-      pauseTimerRef.current = null;
-    }
+    clearPauseTimer();
+  }, [clearPauseTimer]);
+
+  const markDrawingActivity = useCallback(() => {
+    drawingRevisionRef.current += 1;
   }, []);
 
+  useEffect(() => {
+    return () => {
+      clearPauseTimer();
+
+      if (cooldownTimerRef.current) {
+        clearTimeout(cooldownTimerRef.current);
+      }
+    };
+  }, [clearPauseTimer]);
+
   return {
-    isProcessing,
+    aiStage,
+    isProcessing: aiStage !== "idle",
     perfectDrawing,
     startPauseTimer,
     cancelPauseTimer,
+    markDrawingActivity,
   };
 }
