@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import {
   createTransparentAiLayer,
   loadImageElement,
   prepareAiPayload,
 } from "@/lib/aiPerfectCanvas";
+import { invokeAiPerfect } from "@/lib/aiPerfectRequest";
 
 type PerfectDrawingOptions = {
   canvas: HTMLCanvasElement;
@@ -19,6 +19,10 @@ type PerfectDrawingOptions = {
 
 type AiPerfectStage = "idle" | "processing" | "applying";
 
+const SUCCESS_COOLDOWN_MS = 4200;
+const RATE_LIMIT_COOLDOWN_MS = 7000;
+const MIN_REQUEST_GAP_MS = 3200;
+
 export function useAiPerfect() {
   const [aiStage, setAiStage] = useState<AiPerfectStage>("idle");
   const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -27,6 +31,7 @@ export function useAiPerfect() {
   const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const processingRef = useRef(false);
   const drawingRevisionRef = useRef(0);
+  const lastRequestAtRef = useRef(0);
 
   const clearPauseTimer = useCallback(() => {
     if (pauseTimerRef.current) {
@@ -47,24 +52,6 @@ export function useAiPerfect() {
     }, ms);
   }, []);
 
-  const resolveFunctionError = useCallback(async (error: any) => {
-    let message = error?.message || "AI request failed";
-    const status = error?.context?.status;
-
-    if (error?.context && typeof error.context.clone === "function") {
-      try {
-        const payload = await error.context.clone().json();
-        if (payload?.error) {
-          message = payload.error;
-        }
-      } catch {
-        // Ignore JSON parsing issues and use the default message.
-      }
-    }
-
-    return { message, status };
-  }, []);
-
   const perfectDrawing = useCallback(async ({
     canvas,
     whiteboard,
@@ -75,6 +62,22 @@ export function useAiPerfect() {
     onSettled,
   }: PerfectDrawingOptions) => {
     if (processingRef.current || cooldownRef.current) {
+      onSettled?.();
+      return;
+    }
+
+    const timeSinceLastRequest = Date.now() - lastRequestAtRef.current;
+    if (lastRequestAtRef.current !== 0 && timeSinceLastRequest < MIN_REQUEST_GAP_MS) {
+      const remainingMs = MIN_REQUEST_GAP_MS - timeSinceLastRequest;
+      setCooldown(remainingMs);
+
+      if (source === "manual") {
+        toast({
+          title: "AI is catching up",
+          description: `Please wait ${Math.max(1, Math.ceil(remainingMs / 1000))}s before retrying.`,
+        });
+      }
+
       onSettled?.();
       return;
     }
@@ -94,24 +97,28 @@ export function useAiPerfect() {
     let didApplyResult = false;
 
     try {
-      const { data, error } = await supabase.functions.invoke("ai-perfect", {
-        body: {
+      lastRequestAtRef.current = Date.now();
+
+      const result = await invokeAiPerfect(
+        {
           imageBase64: preparedPayload.imageBase64,
           backgroundMode: preparedPayload.background.mode,
         },
-      });
+        source === "manual" ? 3 : 2
+      );
 
-      if (error) {
-        const { message, status } = await resolveFunctionError(error);
+      if (!result.ok) {
+        const message = result.error || "AI request failed";
+        const status = result.status;
         const normalizedMessage = message.toLowerCase();
 
         if (status === 429 || normalizedMessage.includes("429") || normalizedMessage.includes("rate limit")) {
           toast({
             title: "Rate limited",
-            description: "Too many AI requests right now. Auto-perfect will be available again in a few seconds.",
+            description: "The AI service is busy. I’ll hold new requests for a few seconds to prevent repeat failures.",
             variant: "destructive",
           });
-          setCooldown(6000);
+          setCooldown(Math.max(result.retryAfterMs ?? RATE_LIMIT_COOLDOWN_MS, MIN_REQUEST_GAP_MS));
           return;
         }
 
@@ -128,20 +135,16 @@ export function useAiPerfect() {
         throw new Error(message);
       }
 
-      if (data?.error) {
-        throw new Error(data.error);
-      }
-
-      if (!data?.perfectedImage) {
-        throw new Error("AI did not return an image.");
-      }
-
       if (drawingRevisionRef.current !== revisionAtRequestStart) {
         shouldRetryForFreshDrawing = source === "auto";
         return;
       }
 
-      const resultImage = await loadImageElement(data.perfectedImage);
+      if (!result.perfectedImage) {
+        throw new Error("AI did not return an image.");
+      }
+
+      const resultImage = await loadImageElement(result.perfectedImage);
 
       if (drawingRevisionRef.current !== revisionAtRequestStart) {
         shouldRetryForFreshDrawing = source === "auto";
@@ -193,7 +196,7 @@ export function useAiPerfect() {
       onDone?.();
       onApplyComplete?.();
       didApplyResult = true;
-      setCooldown(2500);
+      setCooldown(SUCCESS_COOLDOWN_MS);
 
       await new Promise((resolve) => setTimeout(resolve, 420));
       setAiStage("idle");
@@ -228,7 +231,7 @@ export function useAiPerfect() {
 
       onSettled?.();
     }
-  }, [clearPauseTimer, resolveFunctionError, setCooldown]);
+  }, [clearPauseTimer, setCooldown]);
 
   const startPauseTimer = useCallback(
     (canvas: HTMLCanvasElement, strokeCount: number, whiteboard: boolean, onDone?: () => void) => {
