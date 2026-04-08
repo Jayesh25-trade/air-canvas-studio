@@ -35,7 +35,9 @@ const LIGHT_BACKGROUND: BackgroundConfig = {
   feather: 24,
 };
 
-const MAX_IMAGE_SIDE = 896;
+const MAX_IMAGE_SIDE = 768;
+
+const MASK_EXPANSION_RATIO = 0.018;
 
 const getBackgroundConfig = (whiteboard: boolean): BackgroundConfig =>
   whiteboard ? LIGHT_BACKGROUND : DARK_BACKGROUND;
@@ -96,7 +98,7 @@ export function prepareAiPayload(
 
   const contentWidth = maxX - minX + 1;
   const contentHeight = maxY - minY + 1;
-  const padding = Math.max(24, Math.round(Math.max(contentWidth, contentHeight) * 0.12));
+  const padding = Math.max(18, Math.round(Math.max(contentWidth, contentHeight) * 0.1));
 
   const x = Math.max(0, minX - padding);
   const y = Math.max(0, minY - padding);
@@ -129,7 +131,7 @@ export function prepareAiPayload(
   );
 
   return {
-    imageBase64: payloadCanvas.toDataURL("image/jpeg", whiteboard ? 0.92 : 0.88),
+    imageBase64: payloadCanvas.toDataURL("image/jpeg", whiteboard ? 0.9 : 0.84),
     region: {
       x,
       y,
@@ -151,7 +153,9 @@ export function loadImageElement(src: string) {
 
 export function createTransparentAiLayer(
   image: HTMLImageElement,
-  background: PreparedAiPayload["background"]
+  background: PreparedAiPayload["background"],
+  sourceCanvas?: HTMLCanvasElement,
+  region?: PreparedAiPayload["region"]
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = image.naturalWidth || image.width;
@@ -186,6 +190,81 @@ export function createTransparentAiLayer(
     }
   }
 
+  if (sourceCanvas && region) {
+    const maskCanvas = createExpandedDrawingMask(sourceCanvas, region, canvas.width, canvas.height, background);
+
+    context.save();
+    context.globalCompositeOperation = "destination-in";
+    context.drawImage(maskCanvas, 0, 0, canvas.width, canvas.height);
+    context.restore();
+  }
+
   context.putImageData(imageData, 0, 0);
   return canvas;
+}
+
+function createExpandedDrawingMask(
+  sourceCanvas: HTMLCanvasElement,
+  region: PreparedAiPayload["region"],
+  outputWidth: number,
+  outputHeight: number,
+  background: PreparedAiPayload["background"]
+) {
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = outputWidth;
+  maskCanvas.height = outputHeight;
+
+  const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
+  if (!maskContext) return maskCanvas;
+
+  maskContext.drawImage(
+    sourceCanvas,
+    region.x,
+    region.y,
+    region.width,
+    region.height,
+    0,
+    0,
+    outputWidth,
+    outputHeight
+  );
+
+  const maskImageData = maskContext.getImageData(0, 0, outputWidth, outputHeight);
+  const { data } = maskImageData;
+
+  for (let index = 0; index < data.length; index += 4) {
+    const drawn = isDrawingPixel(data, index, background);
+    data[index] = 255;
+    data[index + 1] = 255;
+    data[index + 2] = 255;
+    data[index + 3] = drawn ? 255 : 0;
+  }
+
+  maskContext.putImageData(maskImageData, 0, 0);
+
+  const expandedMaskCanvas = document.createElement("canvas");
+  expandedMaskCanvas.width = outputWidth;
+  expandedMaskCanvas.height = outputHeight;
+
+  const expandedMaskContext = expandedMaskCanvas.getContext("2d");
+  if (!expandedMaskContext) return maskCanvas;
+
+  const expansionRadius = Math.max(
+    4,
+    Math.round(Math.max(outputWidth, outputHeight) * MASK_EXPANSION_RATIO)
+  );
+
+  expandedMaskContext.globalAlpha = 0.14;
+
+  for (let offsetX = -expansionRadius; offsetX <= expansionRadius; offsetX += 2) {
+    for (let offsetY = -expansionRadius; offsetY <= expansionRadius; offsetY += 2) {
+      if (offsetX * offsetX + offsetY * offsetY > expansionRadius * expansionRadius) continue;
+      expandedMaskContext.drawImage(maskCanvas, offsetX, offsetY);
+    }
+  }
+
+  expandedMaskContext.globalAlpha = 1;
+  expandedMaskContext.drawImage(maskCanvas, 0, 0);
+
+  return expandedMaskCanvas;
 }
