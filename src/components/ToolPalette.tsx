@@ -35,9 +35,10 @@ interface ToolPaletteProps {
   onSave: () => void;
   onAiPerfect?: () => void;
   isAiProcessing?: boolean;
+  aiLabel?: string;
 }
 
-const ToolPalette = ({ tool, onToolChange, onUndo, onRedo, onClear, onSave, onAiPerfect, isAiProcessing }: ToolPaletteProps) => {
+const ToolPalette = ({ tool, onToolChange, onUndo, onRedo, onClear, onSave, onAiPerfect, isAiProcessing, aiLabel }: ToolPaletteProps) => {
   const [expanded, setExpanded] = useState(true);
   const colors = tool.whiteboard ? WHITEBOARD_COLORS : COLORS;
   const glass = tool.whiteboard ? "bg-white/90 border border-black/10 shadow-xl" : "glass";
@@ -226,7 +227,7 @@ const ToolPalette = ({ tool, onToolChange, onUndo, onRedo, onClear, onSave, onAi
             }`}
           >
             <Wand2 className={`h-3.5 w-3.5 ${isAiProcessing ? "animate-spin" : ""}`} />
-            {isAiProcessing ? "..." : "AI ✨"}
+            {isAiProcessing ? aiLabel ?? "Working" : "AI ✨"}
           </button>
         )}
 

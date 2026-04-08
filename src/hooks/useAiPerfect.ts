@@ -12,6 +12,8 @@ type PerfectDrawingOptions = {
   whiteboard: boolean;
   onDone?: () => void;
   source?: "auto" | "manual";
+  onApplyStart?: () => void;
+  onApplyComplete?: () => void;
 };
 
 type AiPerfectStage = "idle" | "processing" | "applying";
@@ -67,6 +69,8 @@ export function useAiPerfect() {
     whiteboard,
     onDone,
     source = "manual",
+    onApplyStart,
+    onApplyComplete,
   }: PerfectDrawingOptions) => {
     if (processingRef.current || cooldownRef.current) return;
 
@@ -143,7 +147,14 @@ export function useAiPerfect() {
 
       setAiStage("applying");
 
-      const transparentLayer = createTransparentAiLayer(resultImage, preparedPayload.background);
+      onApplyStart?.();
+
+      const transparentLayer = createTransparentAiLayer(
+        resultImage,
+        preparedPayload.background,
+        canvas,
+        preparedPayload.region
+      );
 
       if (whiteboard) {
         context.fillStyle = preparedPayload.background.css;
@@ -172,6 +183,7 @@ export function useAiPerfect() {
 
       lastStrokeCountRef.current = 0;
       onDone?.();
+      onApplyComplete?.();
       didApplyResult = true;
       setCooldown(2500);
 
@@ -194,7 +206,14 @@ export function useAiPerfect() {
 
       if (shouldRetryForFreshDrawing && !cooldownRef.current) {
         window.setTimeout(() => {
-          void perfectDrawing({ canvas, whiteboard, onDone, source: "auto" });
+          void perfectDrawing({
+            canvas,
+            whiteboard,
+            onDone,
+            source: "auto",
+            onApplyStart,
+            onApplyComplete,
+          });
         }, 250);
       }
     }

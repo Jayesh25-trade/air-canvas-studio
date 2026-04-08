@@ -30,6 +30,7 @@ const DrawingPage = () => {
   });
   const [cameraReady, setCameraReady] = useState(false);
   const [gesture, setGesture] = useState<string>("none");
+  const [trackingPaused, setTrackingPaused] = useState(false);
   const [canvasActions, setCanvasActions] = useState<{
     undo?: () => void;
     redo?: () => void;
@@ -38,6 +39,7 @@ const DrawingPage = () => {
     getCanvas?: () => HTMLCanvasElement | null;
     getStrokeCount?: () => number;
     clearStrokes?: () => void;
+    setTrackingPaused?: (paused: boolean) => void;
   }>({});
   const canvasActionsRef = useRef(canvasActions);
   canvasActionsRef.current = canvasActions;
@@ -60,9 +62,25 @@ const DrawingPage = () => {
     const actions = canvasActionsRef.current;
     const canvas = actions.getCanvas?.();
     if (canvas) {
-      perfectDrawing({ canvas, whiteboard: tool.whiteboard, onDone: () => {
-        canvasActionsRef.current.clearStrokes?.();
-      } });
+      actions.setTrackingPaused?.(true);
+      setTrackingPaused(true);
+      setGesture("stop");
+
+      perfectDrawing({
+        canvas,
+        whiteboard: tool.whiteboard,
+        onDone: () => {
+          canvasActionsRef.current.clearStrokes?.();
+        },
+        onApplyStart: () => {
+          canvasActionsRef.current.setTrackingPaused?.(true);
+          setTrackingPaused(true);
+        },
+        onApplyComplete: () => {
+          canvasActionsRef.current.setTrackingPaused?.(false);
+          setTrackingPaused(false);
+        },
+      });
     }
   }, [perfectDrawing, tool.whiteboard]);
 
@@ -90,6 +108,7 @@ const DrawingPage = () => {
 
       <DrawingCanvas
         tool={tool}
+        trackingPaused={trackingPaused}
         onCameraReady={setCameraReady}
         onGestureChange={setGesture}
         onActionsReady={setCanvasActions}
@@ -108,6 +127,7 @@ const DrawingPage = () => {
         onSave={handleSave}
         onAiPerfect={handleAiPerfect}
         isAiProcessing={isProcessing}
+        aiLabel={trackingPaused ? "Paused" : undefined}
       />
 
       <GestureGuide gesture={gesture} whiteboard={tool.whiteboard} />
