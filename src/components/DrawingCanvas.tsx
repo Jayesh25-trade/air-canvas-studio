@@ -27,6 +27,7 @@ async function loadMediaPipe() {
 
 interface DrawingCanvasProps {
   tool: DrawingTool;
+  trackingPaused?: boolean;
   onCameraReady: (ready: boolean) => void;
   onGestureChange: (gesture: string) => void;
   onActionsReady: (actions: {
@@ -37,6 +38,7 @@ interface DrawingCanvasProps {
     getCanvas?: () => HTMLCanvasElement | null;
     getStrokeCount?: () => number;
     clearStrokes?: () => void;
+    setTrackingPaused?: (paused: boolean) => void;
   }) => void;
   onStrokeEnd?: () => void;
   onStrokeStart?: () => void;
@@ -141,7 +143,7 @@ function getRainbowColor(): string {
   return `hsl(${rainbowHue}, 100%, 60%)`;
 }
 
-const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, onStrokeEnd, onStrokeStart }: DrawingCanvasProps) => {
+const DrawingCanvas = ({ tool, trackingPaused = false, onCameraReady, onGestureChange, onActionsReady, onStrokeEnd, onStrokeStart }: DrawingCanvasProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
   const cursorCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -159,10 +161,52 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
   const clearGestureStartRef = useRef<number | null>(null);
   const onStrokeEndRef = useRef(onStrokeEnd);
   const onStrokeStartRef = useRef(onStrokeStart);
+  const trackingPausedRef = useRef(trackingPaused);
+  const manualPauseRef = useRef(false);
 
   toolRef.current = tool;
   onStrokeEndRef.current = onStrokeEnd;
   onStrokeStartRef.current = onStrokeStart;
+  trackingPausedRef.current = trackingPaused;
+
+  const finishCurrentStroke = useCallback((currentTool: DrawingTool, canvasWidth: number) => {
+    if (!isDrawingRef.current) return;
+
+    isDrawingRef.current = false;
+
+    if (currentStrokeRef.current.length > 1) {
+      const effectiveColor = currentTool.rainbow ? getRainbowColor() : currentTool.color;
+      strokesRef.current.push({
+        points: [...currentStrokeRef.current],
+        color: effectiveColor,
+        size: currentTool.size,
+        mode: currentTool.mode,
+        opacity: currentTool.opacity,
+        glow: currentTool.glow,
+      });
+
+      if (currentTool.mirror) {
+        strokesRef.current.push({
+          points: currentStrokeRef.current.map((p) => ({
+            x: canvasWidth - p.x,
+            y: p.y,
+          })),
+          color: effectiveColor,
+          size: currentTool.size,
+          mode: currentTool.mode,
+          opacity: currentTool.opacity,
+          glow: currentTool.glow,
+        });
+      }
+
+      redoStackRef.current = [];
+      onStrokeEndRef.current?.();
+    }
+
+    currentStrokeRef.current = [];
+    filterXRef.current.reset();
+    filterYRef.current.reset();
+  }, []);
 
   const drawStroke = useCallback((ctx: CanvasRenderingContext2D, stroke: StrokeLine) => {
     if (stroke.points.length < 2) return;
@@ -245,6 +289,24 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
         filterXRef.current.reset();
         filterYRef.current.reset();
       },
+      setTrackingPaused: (paused: boolean) => {
+        manualPauseRef.current = paused;
+        trackingPausedRef.current = paused;
+        const cursorCanvas = cursorCanvasRef.current;
+        const cursorCtx = cursorCanvas?.getContext("2d");
+        cursorCtx?.clearRect(0, 0, cursorCanvas?.width ?? 0, cursorCanvas?.height ?? 0);
+
+        if (paused) {
+          const currentTool = toolRef.current;
+          finishCurrentStroke(currentTool, cursorCanvas?.width ?? window.innerWidth);
+          gestureBufferRef.current = [];
+          clearGestureStartRef.current = null;
+          onGestureChange("stop");
+          videoRef.current?.pause();
+        } else {
+          void videoRef.current?.play().catch(() => undefined);
+        }
+      },
       save: () => {
         const canvas = drawCanvasRef.current;
         if (!canvas) return;
@@ -267,7 +329,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
         link.click();
       },
     });
-  }, [onActionsReady, redrawAll]);
+  }, [finishCurrentStroke, onActionsReady, onGestureChange, redrawAll]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -314,41 +376,16 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
         setLoading(false);
         cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
 
+        if (trackingPausedRef.current) {
+          const currentTool = toolRef.current;
+          finishCurrentStroke(currentTool, cursorCanvas.width);
+          onGestureChange("stop");
+          return;
+        }
+
         if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
           onGestureChange("none");
-          if (isDrawingRef.current) {
-            isDrawingRef.current = false;
-            if (currentStrokeRef.current.length > 1) {
-              const currentTool = toolRef.current;
-              const effectiveColor = currentTool.rainbow ? getRainbowColor() : currentTool.color;
-              strokesRef.current.push({
-                points: [...currentStrokeRef.current],
-                color: effectiveColor,
-                size: currentTool.size,
-                mode: currentTool.mode,
-                opacity: currentTool.opacity,
-                glow: currentTool.glow,
-              });
-              if (currentTool.mirror) {
-                strokesRef.current.push({
-                  points: currentStrokeRef.current.map(p => ({
-                    x: cursorCanvas.width - p.x,
-                    y: p.y,
-                  })),
-                  color: effectiveColor,
-                  size: currentTool.size,
-                  mode: currentTool.mode,
-                  opacity: currentTool.opacity,
-                  glow: currentTool.glow,
-                });
-              }
-              redoStackRef.current = [];
-              onStrokeEndRef.current?.();
-            }
-            currentStrokeRef.current = [];
-            filterXRef.current.reset();
-            filterYRef.current.reset();
-          }
+          finishCurrentStroke(toolRef.current, cursorCanvas.width);
           return;
         }
 
@@ -449,38 +486,7 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
             }
           }
         } else {
-          if (isDrawingRef.current) {
-            isDrawingRef.current = false;
-            if (currentStrokeRef.current.length > 1) {
-              const effectiveColor = currentTool.rainbow ? getRainbowColor() : currentTool.color;
-              strokesRef.current.push({
-                points: [...currentStrokeRef.current],
-                color: effectiveColor,
-                size: currentTool.size,
-                mode: effectiveMode,
-                opacity: currentTool.opacity,
-                glow: currentTool.glow,
-              });
-              if (currentTool.mirror) {
-                strokesRef.current.push({
-                  points: currentStrokeRef.current.map(p => ({
-                    x: cursorCanvas.width - p.x,
-                    y: p.y,
-                  })),
-                  color: effectiveColor,
-                  size: currentTool.size,
-                  mode: effectiveMode,
-                  opacity: currentTool.opacity,
-                  glow: currentTool.glow,
-                });
-              }
-              redoStackRef.current = [];
-              onStrokeEndRef.current?.();
-            }
-            currentStrokeRef.current = [];
-            filterXRef.current.reset();
-            filterYRef.current.reset();
-          }
+          finishCurrentStroke({ ...currentTool, mode: effectiveMode }, cursorCanvas.width);
 
           if (gesture === "clear") {
             const nowMs = performance.now();
@@ -507,7 +513,13 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
         await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
         if (cancelled) return;
         camera = new mp.Camera(video, {
-          onFrame: async () => { await hands.send({ image: video }); },
+          onFrame: async () => {
+            if (trackingPausedRef.current) {
+              return;
+            }
+
+            await hands.send({ image: video });
+          },
           width: 640,
           height: 480,
         });
@@ -525,7 +537,19 @@ const DrawingCanvas = ({ tool, onCameraReady, onGestureChange, onActionsReady, o
       hands?.close();
       window.removeEventListener("resize", resize);
     };
-  }, [onCameraReady, onGestureChange, redrawAll]);
+  }, [finishCurrentStroke, onCameraReady, onGestureChange, redrawAll]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (trackingPaused) {
+      video.pause();
+      return;
+    }
+
+    void video.play().catch(() => undefined);
+  }, [trackingPaused]);
 
   if (permissionDenied) {
     return (

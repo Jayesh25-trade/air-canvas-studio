@@ -80,6 +80,10 @@ const DrawingPage = () => {
           canvasActionsRef.current.setTrackingPaused?.(false);
           setTrackingPaused(false);
         },
+        onSettled: () => {
+          canvasActionsRef.current.setTrackingPaused?.(false);
+          setTrackingPaused(false);
+        },
       });
     }
   }, [perfectDrawing, tool.whiteboard]);

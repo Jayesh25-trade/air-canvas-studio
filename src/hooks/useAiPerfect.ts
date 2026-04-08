@@ -14,6 +14,7 @@ type PerfectDrawingOptions = {
   source?: "auto" | "manual";
   onApplyStart?: () => void;
   onApplyComplete?: () => void;
+  onSettled?: () => void;
 };
 
 type AiPerfectStage = "idle" | "processing" | "applying";
@@ -71,11 +72,18 @@ export function useAiPerfect() {
     source = "manual",
     onApplyStart,
     onApplyComplete,
+    onSettled,
   }: PerfectDrawingOptions) => {
-    if (processingRef.current || cooldownRef.current) return;
+    if (processingRef.current || cooldownRef.current) {
+      onSettled?.();
+      return;
+    }
 
     const preparedPayload = prepareAiPayload(canvas, whiteboard);
-    if (!preparedPayload) return;
+    if (!preparedPayload) {
+      onSettled?.();
+      return;
+    }
 
     clearPauseTimer();
     processingRef.current = true;
@@ -213,9 +221,12 @@ export function useAiPerfect() {
             source: "auto",
             onApplyStart,
             onApplyComplete,
+            onSettled,
           });
         }, 250);
       }
+
+      onSettled?.();
     }
   }, [clearPauseTimer, resolveFunctionError, setCooldown]);
 
