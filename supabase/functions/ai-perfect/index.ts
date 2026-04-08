@@ -12,6 +12,19 @@ const RequestSchema = z.object({
   backgroundMode: z.enum(["dark", "light"]).default("dark"),
 });
 
+const MODEL_CANDIDATES = [
+  "google/gemini-3.1-flash-image-preview",
+  "google/gemini-3-pro-image-preview",
+];
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
+  new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -21,10 +34,7 @@ serve(async (req) => {
     const parsedBody = RequestSchema.safeParse(await req.json());
 
     if (!parsedBody.success) {
-      return new Response(JSON.stringify({ error: "No image provided" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ ok: false, error: "No image provided", status: 400, retryable: false }, 400);
     }
 
     const { imageBase64, backgroundMode } = parsedBody.data;
@@ -73,55 +83,85 @@ serve(async (req) => {
         body: JSON.stringify(requestBodyForModel(model)),
       });
 
-    let response = await callGateway("google/gemini-3.1-flash-image-preview");
+    let response: Response | null = null;
+    let errorText = "";
+    let lastStatus = 500;
 
-    // Retry on provider-side rejections with a second fast image model.
-    if (!response.ok && response.status === 400) {
-      const firstErrorText = await response.text();
-      console.warn("ai-perfect primary model rejected image, retrying with fallback model", firstErrorText);
-      response = await callGateway("google/gemini-2.5-flash-image");
+    for (const model of MODEL_CANDIDATES) {
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        response = await callGateway(model);
+
+        if (response.ok) {
+          break;
+        }
+
+        lastStatus = response.status;
+        errorText = await response.text();
+        const retryAfterHeader = response.headers.get("retry-after");
+        const retryAfterMs = retryAfterHeader ? Number.parseInt(retryAfterHeader, 10) * 1000 : undefined;
+
+        if (response.status === 400) {
+          console.warn("ai-perfect model rejected image, switching model", { model, errorText });
+          break;
+        }
+
+        if ((response.status === 429 || response.status >= 500) && attempt < 2) {
+          await wait(Math.max(retryAfterMs ?? 0, 1200 * attempt));
+          continue;
+        }
+
+        break;
+      }
+
+      if (response?.ok) {
+        break;
+      }
     }
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limited. Please wait a moment and try again." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+    if (!response || !response.ok) {
+      if (lastStatus === 429) {
+        return jsonResponse({
+          ok: false,
+          error: "Rate limited. Please wait a moment and try again.",
+          status: 429,
+          retryAfterMs: 5000,
+          retryable: true,
+        });
       }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Credits exhausted. Please add funds in Settings." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+
+      if (lastStatus === 402) {
+        return jsonResponse({
+          ok: false,
+          error: "Credits exhausted. Please add funds in Settings.",
+          status: 402,
+          retryable: false,
+        });
       }
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      return new Response(
-        JSON.stringify({ error: "AI processing failed" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+
+      console.error("AI gateway error:", lastStatus, errorText);
+      return jsonResponse({
+        ok: false,
+        error: "AI processing failed",
+        status: lastStatus,
+        retryable: lastStatus >= 500,
+      });
     }
 
     const data = await response.json();
     const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
 
     if (!imageUrl) {
-      return new Response(
-        JSON.stringify({ error: "AI did not return an image" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ ok: false, error: "AI did not return an image", status: 500, retryable: true });
     }
 
-    return new Response(
-      JSON.stringify({ perfectedImage: imageUrl }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({ ok: true, perfectedImage: imageUrl, status: 200, retryable: false });
   } catch (e) {
     console.error("ai-perfect error:", e);
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({
+      ok: false,
+      error: e instanceof Error ? e.message : "Unknown error",
+      status: 500,
+      retryable: true,
+    });
   }
 });
