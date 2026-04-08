@@ -190,6 +190,8 @@ export function createTransparentAiLayer(
     }
   }
 
+  context.putImageData(imageData, 0, 0);
+
   if (sourceCanvas && region) {
     const maskCanvas = createExpandedDrawingMask(sourceCanvas, region, canvas.width, canvas.height, background);
 
@@ -199,7 +201,6 @@ export function createTransparentAiLayer(
     context.restore();
   }
 
-  context.putImageData(imageData, 0, 0);
   return canvas;
 }
 
